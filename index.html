@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>PC Monitor - Pro</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <style>
+    body {
+      font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background: #111;
+      color: #eee;
+      text-align: center;
+      margin: 0;
+      padding: 20px;
+    }
+
+    h1 { margin-bottom: 30px; color: #fff; font-weight: 300; }
+
+    .container {
+      width: 95%;
+      margin: 0 auto;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 20px;
+    }
+
+    /* Card base styling */
+    .card {
+      width: 320px;
+      background: #222;
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+      transition: all 0.3s ease;
+      border: 1px solid #333;
+    }
+
+    /* Offline status styling: Intuitive grayscale representation */
+    .card.offline {
+      opacity: 0.6;
+      filter: grayscale(0.8);
+      border-color: #551a1a;
+    }
+
+    .card h3 {
+      margin: 0 0 5px 0;
+      color: #00d4ff;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    /* Status badges */
+    .status-badge {
+      font-size: 10px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      text-transform: uppercase;
+      font-weight: bold;
+    }
+    .online-badge { background: #006400; color: #0f0; }
+    .offline-badge { background: #640000; color: #f00; }
+
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: 1fr 2fr;
+      align-items: center;
+      gap: 8px;
+      margin-top: 15px;
+      margin-bottom: 15px;
+    }
+
+    .label {
+      font-size: 13px;
+      text-align: left;
+      color: #bbb;
+    }
+
+    .bar-container {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .bar {
+      flex-grow: 1;
+      height: 12px;
+      background: #333;
+      border-radius: 6px;
+      overflow: hidden;
+    }
+
+    .fill {
+      height: 100%;
+      width: 0%;
+      background: limegreen;
+      transition: width 0.4s ease, background 0.3s;
+    }
+
+    .value {
+      font-size: 12px;
+      font-family: 'Courier New', monospace;
+      width: 50px;
+      text-align: right;
+    }
+
+    canvas {
+      margin-top: 15px;
+      background: #1a1a1a;
+      border-radius: 8px;
+      padding: 5px;
+    }
+  </style>
+</head>
+
+<body>
+
+<h1>🖥️ Multi PC Monitor</h1>
+
+<div class="container" id="container"></div>
+
+<script>
+let charts = {};
+// API server base URL (Modify this according to your environment)
+const API_BASE = "http://monitoring PC IP & Port";
+
+/**
+ * Updates progress bars and numerical values
+ */
+function updateMetricDisplay(host, type, value) {
+    const fill = document.getElementById(`fill-${host}-${type}`);
+    const text = document.getElementById(`val-${host}-${type}`);
+    
+    if (!fill || !text) return;
+
+    // Handle cases where metrics (like GPU) are null/undefined
+    if (value === null || value === undefined) {
+        fill.style.width = "0%";
+        text.innerText = "N/A";
+        return;
+    }
+
+    // Dynamic color change based on load (Green -> Orange -> Red)
+    let color = "limegreen";
+    if (value > 80) color = "#ff4d4d";
+    else if (value > 50) color = "#ffa500";
+
+    fill.style.width = value + "%";
+    fill.style.background = color;
+    text.innerText = value.toFixed(1) + "%";
+}
+
+/**
+ * Creates a new monitoring card for a specific host
+ */
+function createCard(host) {
+    const container = document.getElementById("container");
+    const card = document.createElement("div");
+    card.id = `card-${host}`;
+    card.className = "card";
+
+    const metrics = ['cpu', 'memory', 'disk', 'gpu'];
+    let metricsHtml = '<div class="metrics-grid">';
+    metrics.forEach(m => {
+        metricsHtml += `
+            <div class="label">${m.toUpperCase()}</div>
+            <div class="bar-container">
+                <div class="bar"><div id="fill-${host}-${m}" class="fill"></div></div>
+                <div id="val-${host}-${m}" class="value">0%</div>
+            </div>
+        `;
+    });
+    metricsHtml += '</div>';
+
+    card.innerHTML = `
+        <h3>
+            <span>${host}</span>
+            <span id="badge-${host}" class="status-badge">Checking...</span>
+        </h3>
+        ${metricsHtml}
+        <canvas id="chart-${host}" width="280" height="140"></canvas>
+    `;
+    
+    container.appendChild(card);
+}
+
+/**
+ * Fetches the latest data from the server and reflects it in the UI
+ */
+async function update() {
+    try {
+        const res = await fetch(`${API_BASE}/latest_all`);
+        const data = await res.json();
+
+        data.forEach(pc => {
+            // Create a card if a new host is discovered
+            let card = document.getElementById(`card-${pc.host}`);
+            if (!card) {
+                createCard(pc.host);
+                card = document.getElementById(`card-${pc.host}`);
+            }
+
+            // Reflect Online/Offline status
+            const badge = document.getElementById(`badge-${pc.host}`);
+            
+            if (pc.status === "online") {
+                card.classList.remove("offline");
+                badge.innerText = "ONLINE";
+                badge.className = "status-badge online-badge";
+            } else {
+                card.classList.add("offline");
+                badge.innerText = "OFFLINE";
+                badge.className = "status-badge offline-badge";
+            }
+
+            // Update bars and values for each metric
+            updateMetricDisplay(pc.host, 'cpu', pc.cpu);
+            updateMetricDisplay(pc.host, 'memory', pc.memory);
+            updateMetricDisplay(pc.host, 'disk', pc.disk);
+            updateMetricDisplay(pc.host, 'gpu', pc.gpu);
+
+            // Update history chart
+            updateChart(pc.host);
+        });
+    } catch (e) {
+        console.error("Update error:", e);
+    }
+}
+
+/**
+ * Fetches historical data and updates the line chart
+ */
+async function updateChart(host) {
+    try {
+        const res = await fetch(`${API_BASE}/history/${host}`);
+        const data = await res.json();
+        const canvasId = `chart-${host}`;
+        
+        // Convert Unix timestamps to local time format
+        const labels = data.timestamps.map(t => new Date(t * 1000).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+
+        if (!charts[host]) {
+            // Initial chart configuration
+            const ctx = document.getElementById(canvasId).getContext("2d");
+            charts[host] = new Chart(ctx, {
+                type: "line",
+                data: {
+                    labels: labels,
+                    datasets: [
+                        { label: "CPU", data: data.cpu, borderColor: "lime", borderWidth: 2, pointRadius: 0, tension: 0.3, fill: false },
+                        { label: "GPU", data: data.gpu.map(v => v === null ? 0 : v), borderColor: "cyan", borderWidth: 2, pointRadius: 0, tension: 0.3, fill: false }
+                    ]
+                },
+                options: {
+                    animation: false,
+                    responsive: false,
+                    plugins: { 
+                        legend: { display: true, labels: { color: '#888', font: { size: 10 }, boxWidth: 10 } } 
+                    },
+                    scales: {
+                        x: { display: false },
+                        y: { min: 0, max: 100, ticks: { color: '#555', font: { size: 9 } }, grid: { color: '#222' } }
+                    }
+                }
+            });
+        } else {
+            // Data-only update to minimize rendering cost
+            charts[host].data.labels = labels;
+            charts[host].data.datasets[0].data = data.cpu;
+            charts[host].data.datasets[1].data = data.gpu.map(v => v === null ? 0 : v);
+            charts[host].update('none');
+        }
+    } catch (e) {
+        console.error("Chart error:", e);
+    }
+}
+
+// Initial execution and set periodic update (1-second interval)
+update();
+setInterval(update, 1000);
+</script>
+
+</body>
+</html>
