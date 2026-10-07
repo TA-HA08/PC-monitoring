@@ -124,8 +124,6 @@
 
 <script>
 let charts = {};
-// API server base URL (Modify this according to your environment)
-const API_BASE = "http://monitoring PC IP & Port";
 
 /**
  * Updates progress bars and numerical values
@@ -192,7 +190,7 @@ function createCard(host) {
  */
 async function update() {
     try {
-        const res = await fetch(`${API_BASE}/latest_all`);
+        const res = await fetch("/latest_all");
         const data = await res.json();
 
         data.forEach(pc => {
@@ -235,7 +233,7 @@ async function update() {
  */
 async function updateChart(host) {
     try {
-        const res = await fetch(`${API_BASE}/history/${host}`);
+        const res = await fetch(`/history/${host}`);
         const data = await res.json();
         const canvasId = `chart-${host}`;
         

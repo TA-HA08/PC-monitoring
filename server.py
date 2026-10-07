@@ -1,10 +1,18 @@
 # server.py
-from fastapi import FastAPI, Request
-from pydantic import BaseModel
-from fastapi.middleware.cors import CORSMiddleware
-from typing import Optional
 import sqlite3
 import time
+from pathlib import Path
+from typing import Optional
+
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from pydantic import BaseModel
+
+from config import ServerSettings
+
+settings = ServerSettings()
+BASE_DIR = Path(__file__).resolve().parent
 
 app = FastAPI()
 
@@ -17,18 +25,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Allowed server IP addresses
-ALLOWED_IPS = [
-    #Monitoring PC IP(server.py)
-    #Target (agent.py server1 )
-    #Target (agent.py server2)
-    #if you want to monitor another PC, plese add their IP addresses below
-]
+@app.get("/")
+def get_index():
+    return FileResponse(BASE_DIR / "index.html")
+
 
 # Database
-conn = sqlite3.connect("metrics.db", check_same_thread=False)
-#mtrics.db -> save data file
-
+conn = sqlite3.connect(
+    settings.database_path,
+    check_same_thread=False,
+)
 
 with conn:
     conn.execute("""
@@ -57,7 +63,7 @@ def receive_metrics(request: Request, data: Metrics):
     client_ip = request.client.host
 
     #  check IP permitted or not
-    if client_ip not in ALLOWED_IPS:
+    if client_ip not in settings.allowed_ips:
         print(f"Access from an unauthorized IP address: {client_ip}")
         return {"error": "forbidden"}
 
@@ -85,8 +91,6 @@ def receive_metrics(request: Request, data: Metrics):
 @app.get("/latest_all")
 def get_latest_all():
     cur = conn.cursor()
-    # Servers that haven't been updated for more than 30 seconds will be logged out
-    THRESHOLD = 30 
     now = time.time()
 
     cur.execute("""
@@ -100,7 +104,11 @@ def get_latest_all():
     for r in rows:
         last_time = r[5]
         # comparison of current time and data time
-        status = "online" if (now - last_time) < THRESHOLD else "offline"
+        status = (
+            "online"
+            if (now - last_time) < settings.offline_threshold_seconds
+            else "offline"
+        )
         
         result.append({
             "host": r[0],

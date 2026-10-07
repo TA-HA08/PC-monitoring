@@ -7,6 +7,10 @@ import time
 import requests
 import socket
 
+from config import AgentSettings
+
+settings = AgentSettings()
+
 #GPU
 try:
     import GPUtil #if the server has GPU
@@ -14,9 +18,6 @@ except:
     GPUtil = None #if the server doesn't have GPU
 
 HOSTNAME = socket.gethostname() #For server identification
-
-#IP address of the monitoring PC
-URL = "http://xxx.xxx.xxx.xxx:port/metrics"
 
 #GPU
 def get_gpu_usage():
@@ -35,9 +36,11 @@ def get_gpu_usage():
 
 while True:
     try:
-        cpu = psutil.cpu_percent(interval = 0.5)
+        cpu = psutil.cpu_percent(
+            interval = settings.cpu_sample_interval_seconds
+        )
         memory = psutil.virtual_memory().percent
-        disk = psutil.disk_usage('/').percent
+        disk = psutil.disk_usage(settings.disk_path).percent
         gpu = get_gpu_usage()
 
         data = {
@@ -48,10 +51,14 @@ while True:
             "gpu": float(gpu) if gpu is not None else None
         }
 
-        res = requests.post(URL, json = data, timeout = 1)
+        res = requests.post(
+            str(settings.server_url),
+            json = data,
+            timeout=settings.request_timeout_seconds,
+        )
     
     except Exception as e:
         print(f"Sending Failed:{e}")
 
     #Transmission interval
-    time.sleep(1)
+    time.sleep(settings.send_interval_seconds)
